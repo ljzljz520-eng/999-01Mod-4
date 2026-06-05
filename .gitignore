@@ -1,0 +1,13 @@
+data/*.db
+!data/.gitkeep
+.DS_Store
+node_modules/
+vendor/
+.idea/
+.vscode/
+dist/
+build/
+*.log
+__pycache__/
+.venv/
+.env

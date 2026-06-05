@@ -1,0 +1,21 @@
+CREATE DATABASE IF NOT EXISTS fixed_assets;
+USE fixed_assets;
+
+CREATE TABLE IF NOT EXISTS facode2sn (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    facode VARCHAR(50) NOT NULL UNIQUE,
+    sn VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入测试数据
+INSERT INTO facode2sn (facode, sn) VALUES 
+('FA001', 'SN2024001'),
+('FA002', 'SN2024002'),
+('FA003', 'SN2024003'),
+('TEST-01', 'SN-TEST-001');
+
+-- 创建 api 用户 (适配用户测试场景)
+CREATE USER IF NOT EXISTS 'api'@'%' IDENTIFIED BY 'FJzzCT#api';
+GRANT SELECT ON fixed_assets.* TO 'api'@'%';
+FLUSH PRIVILEGES;

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FAQuery - 固定资产编码查询</title>
+  <link rel="stylesheet" href="/src/style.css">
+  <style>
+    /* 模态框动画 */
+    .modal-enter {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+
+    .modal-enter-active {
+      opacity: 1;
+      transform: scale(1);
+      transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+    }
+
+    .modal-exit {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .modal-exit-active {
+      opacity: 0;
+      transform: scale(0.95);
+      transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+    }
+
+    .backdrop-enter {
+      opacity: 0;
+    }
+
+    .backdrop-enter-active {
+      opacity: 1;
+      transition: opacity 0.3s ease-out;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8 px-4 sm:px-6 lg:px-8 font-sans text-gray-900">
+  <div class="max-w-4xl mx-auto">
+    <!-- 主卡片 -->
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+      <div class="p-8">
+        <!-- 标题区域 -->
+        <div class="flex justify-between items-start mb-8">
+          <div>
+            <div class="uppercase tracking-wide text-xs font-bold text-indigo-500 mb-2">系统工具</div>
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">固定资产编码查询</h1>
+            <p class="mt-2 text-gray-500">输入服务器 IP 和固定资产编码快速查询对应的 SN</p>
+          </div>
+          <button id="settingsBtn"
+            class="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            title="数据库连接管理">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 查询表单 -->
+        <form id="queryForm" class="space-y-6 mb-8" novalidate>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 服务器 IP -->
+            <div>
+              <label for="ipInput" class="block text-sm font-semibold text-gray-700 mb-2">服务器 IP 或域名</label>
+              <div class="relative rounded-md shadow-sm">
+                <input type="text" id="ipInput"
+                  class="block w-full px-4 py-3 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border transition-shadow"
+                  placeholder="例如: 192.168.1.100 或 localhost" value="localhost">
+              </div>
+            </div>
+
+            <!-- FACode -->
+            <div>
+              <label for="facodeInput" class="block text-sm font-semibold text-gray-700 mb-2">固定资产编码 (FACode)</label>
+              <div class="relative rounded-md shadow-sm">
+                <input type="text" id="facodeInput"
+                  class="block w-full px-4 py-3 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border transition-shadow"
+                  placeholder="例如: FA001">
+              </div>
+            </div>
+          </div>
+
+          <!-- 查询按钮 -->
+          <button type="button" onclick="window.queryManager.performQuery()"
+            class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 hover:shadow-md active:scale-[0.99]">
+            查询 SN
+          </button>
+        </form>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden py-8 flex justify-center">
+          <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-600"></div>
+        </div>
+
+        <!-- 成功结果 -->
+        <div id="resultBox" class="hidden mb-8">
+          <div id="resultContent"></div>
+        </div>
+
+        <!-- 错误提示卡片 -->
+        <div id="errorBox" class="hidden mb-8">
+          <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                  fill="currentColor">
+                  <path fill-rule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <h3 class="text-sm font-medium text-red-800">请求出错</h3>
+                <div id="errorMessage" class="mt-2 text-sm text-red-700"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API 调用命令 -->
+        <div class="bg-slate-900 rounded-lg p-5 overflow-hidden shadow-inner mb-8">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">API 调用命令</span>
+          </div>
+          <div class="overflow-x-auto">
+            <pre id="curlCommand" class="text-sm font-mono text-green-400 whitespace-pre-wrap break-all"></pre>
+          </div>
+        </div>
+
+        <!-- 查询历史 -->
+        <div class="border-t border-gray-100 pt-8">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-lg font-bold text-gray-900">查询历史</h2>
+            <button id="clearHistoryBtn"
+              class="text-sm text-gray-500 hover:text-red-600 transition-colors flex items-center font-medium">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                </path>
+              </svg>
+              清空历史
+            </button>
+          </div>
+
+          <div id="historyList" class="space-y-4">
+            <!-- 动态生成历史记录 -->
+          </div>
+          <div id="emptyHistory" class="text-center py-10 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+            <p class="text-gray-400 text-sm">暂无查询历史记录</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全局遮罩层 (用于所有模态框) -->
+  <div id="globalOverlay"
+    class="fixed inset-0 bg-black/50 hidden z-40 backdrop-blur-sm transition-opacity duration-300"></div>
+
+  <!-- 1. 数据库连接管理模态框 (完全居中) -->
+  <div id="settingsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center pointer-events-none p-4">
+    <div
+      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl pointer-events-auto transform transition-all duration-300 scale-100 max-h-[90vh] flex flex-col">
+      <!-- 模态框标题 -->
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-xl">
+        <h3 class="text-lg font-bold text-gray-900">数据库连接管理</h3>
+        <button id="closeSettings"
+          class="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100 focus:outline-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 模态框内容 -->
+      <div class="modal-body p-6 overflow-y-auto">
+        <!-- 动态内容 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 通用确认对话框 (Confirm Modal) -->
+  <div id="confirmModal" class="fixed inset-0 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md transform transition-all p-6 text-center">
+      <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+        <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h3 class="text-lg leading-6 font-medium text-gray-900" id="confirmTitle">确认操作</h3>
+      <div class="mt-2">
+        <p class="text-sm text-gray-500" id="confirmMessage">确定要执行此操作吗？</p>
+      </div>
+      <div class="mt-6 flex justify-center gap-3">
+        <button id="confirmCancelBtn" type="button"
+          class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm">
+          取消
+        </button>
+        <button id="confirmOkBtn" type="button"
+          class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm">
+          确定
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 通用提示对话框 (Alert Modal) -->
+  <div id="alertModal" class="fixed inset-0 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-sm transform transition-all p-6">
+      <div class="flex items-center mb-4">
+        <div class="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 mr-3">
+          <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900" id="alertTitle">提示</h3>
+      </div>
+      <div class="mt-2 text-sm text-gray-500" id="alertMessage">
+        <!-- 消息内容 -->
+      </div>
+      <div class="mt-6 text-right">
+        <button id="alertOkBtn" type="button"
+          class="inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">
+          知道了
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>

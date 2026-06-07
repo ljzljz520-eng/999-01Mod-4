@@ -2,7 +2,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:80"
+      - "3006:80"
     depends_on:
       - backend
     networks:
@@ -11,7 +11,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:80"
+      - "8086:80"
     environment:
       - DB_CONNECTION=mysql
       - DB_HOST=db

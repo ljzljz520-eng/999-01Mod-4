@@ -630,7 +630,597 @@ class HistoryManager {
     }
 }
 
-// ==================== 查询管理器 ====================
+// ==================== 角色管理器 ====================
+class RoleManager {
+    constructor() {
+        this.roleKey = 'fa_query_role_v5';
+        this.batchIdKey = 'fa_query_batch_id_v5';
+        this.currentRole = 'user';
+        this.roleBadge = document.getElementById('roleBadge');
+        this.roleToggleBtn = document.getElementById('roleToggleBtn');
+        this.adminBtn = document.getElementById('adminBtn');
+        this.riskAlertBadge = document.getElementById('riskAlertBadge');
+        this.riskManager = null;
+
+        this.init();
+    }
+
+    init() {
+        this.currentRole = localStorage.getItem(this.roleKey) || 'user';
+        this.updateUI();
+
+        if (this.roleToggleBtn) {
+            this.roleToggleBtn.addEventListener('click', () => this.toggleRole());
+        }
+    }
+
+    setRiskManager(rm) {
+        this.riskManager = rm;
+    }
+
+    getRole() {
+        return this.currentRole;
+    }
+
+    isAdmin() {
+        return this.currentRole === 'admin';
+    }
+
+    getBatchId() {
+        let batchId = sessionStorage.getItem(this.batchIdKey);
+        if (!batchId) {
+            batchId = 'batch_' + Math.random().toString(36).substring(2, 15) + Date.now();
+            sessionStorage.setItem(this.batchIdKey, batchId);
+        }
+        return batchId;
+    }
+
+    toggleRole() {
+        this.currentRole = this.currentRole === 'user' ? 'admin' : 'user';
+        localStorage.setItem(this.roleKey, this.currentRole);
+        this.updateUI();
+
+        if (this.currentRole === 'admin' && this.riskManager) {
+            this.riskManager.loadRiskList();
+        }
+
+        uiManager.alert(
+            this.currentRole === 'admin' 
+                ? '已切换为管理员角色，可查看风险检测详情和进行管控操作' 
+                : '已切换为普通用户角色，风险查询仅显示需要人工确认提示',
+            '角色已切换'
+        );
+    }
+
+    updateUI() {
+        if (this.roleBadge) {
+            if (this.currentRole === 'admin') {
+                this.roleBadge.textContent = '管理员';
+                this.roleBadge.className = 'px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full';
+            } else {
+                this.roleBadge.textContent = '普通用户';
+                this.roleBadge.className = 'px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-bold rounded-full';
+            }
+        }
+
+        if (this.adminBtn) {
+            if (this.currentRole === 'admin') {
+                this.adminBtn.classList.remove('hidden');
+            } else {
+                this.adminBtn.classList.add('hidden');
+            }
+        }
+    }
+
+    updateRiskBadge(count) {
+        if (this.riskAlertBadge) {
+            if (count > 0) {
+                this.riskAlertBadge.classList.remove('hidden');
+            } else {
+                this.riskAlertBadge.classList.add('hidden');
+            }
+        }
+    }
+
+    getHeaders(baseHeaders = {}) {
+        const city = document.getElementById('cityInput')?.value || '未知';
+        const device = document.getElementById('deviceInput')?.value || 'desktop';
+        
+        return {
+            ...baseHeaders,
+            'X-User-Role': this.currentRole,
+            'X-Batch-Id': this.getBatchId(),
+            'X-City': encodeURIComponent(city),
+            'X-Device-Type': device
+        };
+    }
+
+    getHostAndPort() {
+        const input = document.getElementById('ipInput')?.value.trim() || 'localhost:8080';
+        if (input.includes(':')) {
+            return input;
+        }
+        return `${input}:8080`;
+    }
+}
+
+// ==================== 风险管理器 ====================
+class RiskManager {
+    constructor() {
+        this.adminModal = document.getElementById('adminModal');
+        this.adminModalBody = document.getElementById('adminModalBody');
+        this.riskDetailModal = document.getElementById('riskDetailModal');
+        this.riskDetailBody = document.getElementById('riskDetailBody');
+        this.riskDetailTitle = document.getElementById('riskDetailTitle');
+        this.riskFilter = document.getElementById('riskFilter');
+        this.pendingCountBadge = document.getElementById('pendingCountBadge');
+        this.adminBtn = document.getElementById('adminBtn');
+        this.closeAdminBtn = document.getElementById('closeAdmin');
+        this.closeRiskDetailBtn = document.getElementById('closeRiskDetail');
+
+        this.currentRiskList = [];
+        this.currentFilter = 'pending';
+        this.currentMarkerId = null;
+
+        this.init();
+    }
+
+    init() {
+        if (this.adminBtn) {
+            this.adminBtn.addEventListener('click', () => this.openAdminModal());
+        }
+        if (this.closeAdminBtn) {
+            this.closeAdminBtn.addEventListener('click', () => this.closeAdminModal());
+        }
+        if (this.closeRiskDetailBtn) {
+            this.closeRiskDetailBtn.addEventListener('click', () => this.closeRiskDetailModal());
+        }
+        if (this.riskFilter) {
+            this.riskFilter.addEventListener('change', (e) => {
+                this.currentFilter = e.target.value;
+                this.loadRiskList();
+            });
+        }
+    }
+
+    async loadRiskList() {
+        if (!roleManager.isAdmin()) return;
+
+        try {
+            const host = roleManager.getHostAndPort();
+            const headers = connectionManager.getHeaders();
+            const authHeaders = roleManager.getHeaders(headers);
+            
+            const response = await fetch(`http://${host}/api/admin_risk_list.php?status=${this.currentFilter}`, {
+                method: 'GET',
+                headers: authHeaders
+            });
+
+            if (!response.ok) {
+                throw new Error('获取风险列表失败');
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                this.currentRiskList = data.data;
+                this.renderRiskList();
+                
+                if (this.currentFilter === 'pending') {
+                    roleManager.updateRiskBadge(data.data.length);
+                }
+            }
+        } catch (e) {
+            console.error('Load risk list error:', e);
+        }
+    }
+
+    getPendingCount() {
+        return this.currentRiskList.filter(r => r.status === 'pending').length;
+    }
+
+    getRiskLevelLabel(level) {
+        const labels = {
+            low: { text: '低', class: 'bg-gray-100 text-gray-700' },
+            medium: { text: '中', class: 'bg-yellow-100 text-yellow-700' },
+            high: { text: '高', class: 'bg-orange-100 text-orange-700' },
+            critical: { text: '严重', class: 'bg-red-100 text-red-700' }
+        };
+        return labels[level] || labels.medium;
+    }
+
+    getStatusLabel(status) {
+        const labels = {
+            pending: { text: '待处理', class: 'bg-yellow-100 text-yellow-700' },
+            confirmed_fraud: { text: '已确认冒用', class: 'bg-red-100 text-red-700' },
+            confirmed_safe: { text: '已确认安全', class: 'bg-green-100 text-green-700' },
+            ignored: { text: '已忽略', class: 'bg-gray-100 text-gray-700' }
+        };
+        return labels[status] || labels.pending;
+    }
+
+    getRuleLabel(code) {
+        const labels = {
+            city_mismatch: '跨城市查询',
+            device_mismatch: '跨设备类型查询',
+            frequency_exceed: '高频查询'
+        };
+        return labels[code] || code;
+    }
+
+    formatDateTime(str) {
+        if (!str) return '-';
+        const d = new Date(str);
+        return d.toLocaleString('zh-CN');
+    }
+
+    renderRiskList() {
+        if (!this.adminModalBody) return;
+
+        const list = this.currentRiskList;
+
+        if (this.pendingCountBadge && this.currentFilter === 'pending') {
+            this.pendingCountBadge.textContent = `待处理: ${list.length}`;
+        }
+
+        if (list.length === 0) {
+            this.adminModalBody.innerHTML = `
+                <div class="text-center py-10 text-gray-500">
+                    <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-sm">暂无${this.currentFilter === 'all' ? '' : this.getStatusLabel(this.currentFilter).text}风险记录</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '<div class="space-y-4">';
+        
+        list.forEach(marker => {
+            const level = this.getRiskLevelLabel(marker.risk_level);
+            const status = this.getStatusLabel(marker.status);
+            const lockedBatchCount = (marker.locked_batches || []).filter(b => b.is_locked).length;
+
+            html += `
+                <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all ${marker.status === 'pending' ? 'bg-yellow-50/50' : ''}">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            <span class="font-mono font-bold text-gray-900 text-lg">${marker.sn}</span>
+                            <span class="px-2 py-0.5 ${level.class} text-xs font-bold rounded-full">风险${level.text}</span>
+                            <span class="px-2 py-0.5 ${status.class} text-xs font-bold rounded-full">${status.text}</span>
+                            ${lockedBatchCount > 0 ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full">已锁定${lockedBatchCount}个批次</span>` : ''}
+                        </div>
+                        <button onclick="window.riskManager.viewDetail(${marker.id})" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+                            查看详情 →
+                        </button>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-3">${marker.risk_reason || '暂无风险描述'}</p>
+                    
+                    <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                        <span>触发规则: ${(marker.triggered_rules || []).map(r => this.getRuleLabel(r)).join('、') || '-'}</span>
+                        <span>查询批次: ${marker.batch_count || 0}</span>
+                        <span>总查询次数: ${marker.query_count || 0}</span>
+                        <span>创建时间: ${this.formatDateTime(marker.created_at)}</span>
+                        <span>最后查询: ${this.formatDateTime(marker.last_query_at)}</span>
+                    </div>
+
+                    ${marker.status === 'pending' ? `
+                        <div class="mt-4 pt-4 border-t border-gray-200 flex items-center gap-2">
+                            <button onclick="window.riskManager.confirmFraud(${marker.id})" class="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition font-medium">
+                                确认冒用并锁定
+                            </button>
+                            <button onclick="window.riskManager.confirmSafe(${marker.id})" class="px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition font-medium">
+                                确认安全
+                            </button>
+                            <button onclick="window.riskManager.ignoreRisk(${marker.id})" class="px-3 py-1.5 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition font-medium">
+                                忽略
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        this.adminModalBody.innerHTML = html;
+    }
+
+    viewDetail(markerId) {
+        const marker = this.currentRiskList.find(m => m.id === markerId);
+        if (!marker) return;
+
+        this.currentMarkerId = markerId;
+        this.riskDetailTitle.textContent = `风险详情 - ${marker.sn}`;
+        
+        const level = this.getRiskLevelLabel(marker.risk_level);
+        const status = this.getStatusLabel(marker.status);
+
+        let html = `
+            <div class="space-y-6">
+                <div class="bg-gradient-to-r from-gray-50 to-slate-50 rounded-lg p-4">
+                    <div class="flex items-center gap-3 mb-3">
+                        <span class="font-mono font-bold text-xl">${marker.sn}</span>
+                        <span class="px-2 py-0.5 ${level.class} text-xs font-bold rounded-full">风险${level.text}</span>
+                        <span class="px-2 py-0.5 ${status.class} text-xs font-bold rounded-full">${status.text}</span>
+                    </div>
+                    <p class="text-gray-700">${marker.risk_reason || '暂无风险描述'}</p>
+                    ${marker.note ? `<p class="mt-2 text-sm text-gray-500"><span class="font-medium">管理员备注:</span> ${marker.note}</p>` : ''}
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-gray-900 mb-3">触发的风险规则</h4>
+                    <div class="flex flex-wrap gap-2">
+                        ${(marker.triggered_rules || []).map(r => `
+                            <span class="px-3 py-1 bg-red-50 text-red-700 text-sm rounded-full border border-red-200">${this.getRuleLabel(r)}</span>
+                        `).join('') || '<span class="text-gray-500 text-sm">无</span>'}
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-gray-900 mb-3">查询历史记录</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-gray-50">
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">批次ID</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">FACode</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">城市</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">设备</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">IP</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">查询时间</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-600">状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+        `;
+
+        const seenBatches = new Set();
+        (marker.query_history || []).forEach(log => {
+            if (seenBatches.has(log.batch_id)) return;
+            seenBatches.add(log.batch_id);
+
+            const locked = (marker.locked_batches || []).find(b => b.batch_id === log.batch_id && b.is_locked);
+            
+            html += `
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="px-3 py-2 font-mono text-xs text-gray-600">${log.batch_id.substring(0, 12)}...</td>
+                    <td class="px-3 py-2">${log.facode}</td>
+                    <td class="px-3 py-2">${log.city || '-'}</td>
+                    <td class="px-3 py-2">${log.device_type || '-'}</td>
+                    <td class="px-3 py-2 font-mono text-xs">${log.query_ip}</td>
+                    <td class="px-3 py-2 text-xs text-gray-500">${this.formatDateTime(log.queried_at)}</td>
+                    <td class="px-3 py-2">
+                        ${locked 
+                            ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full">已锁定</span>`
+                            : `<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">正常</span>`
+                        }
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-gray-900 mb-3">批次锁定管理</h4>
+                    <div class="space-y-2">
+        `;
+
+        const batchLockMap = {};
+        (marker.locked_batches || []).forEach(b => {
+            batchLockMap[b.batch_id] = b;
+        });
+
+        seenBatches.forEach(batchId => {
+            const locked = batchLockMap[batchId];
+            html += `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                        <span class="font-mono text-sm">${batchId.substring(0, 20)}...</span>
+                        ${locked && locked.is_locked 
+                            ? `<span class="ml-2 text-xs text-red-600">锁定原因: ${locked.lock_reason || '未填写'}</span>`
+                            : ''
+                        }
+                    </div>
+                    <div>
+                        ${locked && locked.is_locked
+                            ? `<button onclick="window.riskManager.toggleBatchLock('${batchId}', 'unlock', '${marker.sn}', ${marker.id})" class="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700">解锁</button>`
+                            : `<button onclick="window.riskManager.toggleBatchLock('${batchId}', 'lock', '${marker.sn}', ${marker.id})" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">锁定</button>`
+                        }
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+                    </div>
+                </div>
+
+                ${marker.status === 'pending' ? `
+                    <div class="pt-4 border-t border-gray-200">
+                        <h4 class="font-bold text-gray-900 mb-3">风险处理</h4>
+                        <div class="flex gap-3">
+                            <button onclick="window.riskManager.confirmFraud(${marker.id})" class="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium">
+                                确认冒用并锁定所有批次
+                            </button>
+                            <button onclick="window.riskManager.confirmSafe(${marker.id})" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">
+                                确认安全
+                            </button>
+                            <button onclick="window.riskManager.ignoreRisk(${marker.id})" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-medium">
+                                忽略
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        this.riskDetailBody.innerHTML = html;
+        this.riskDetailModal.classList.remove('hidden');
+        uiManager.showOverlay();
+    }
+
+    async confirmFraud(markerId) {
+        uiManager.confirm('确认该序列号为冒用吗？确认后所有相关查询批次将被锁定。', async () => {
+            try {
+                const host = roleManager.getHostAndPort();
+                const headers = connectionManager.getHeaders();
+                const authHeaders = roleManager.getHeaders(headers);
+                
+                const response = await fetch(`http://${host}/api/admin_risk_action.php`, {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        marker_id: markerId,
+                        action: 'confirmed_fraud'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('操作失败');
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    uiManager.alert('已确认冒用，相关查询批次已锁定', '操作成功');
+                    this.loadRiskList();
+                    this.closeRiskDetailModal();
+                }
+            } catch (e) {
+                uiManager.alert('操作失败: ' + e.message, '错误');
+            }
+        }, '确认冒用');
+    }
+
+    async confirmSafe(markerId) {
+        uiManager.confirm('确认该序列号查询为安全吗？', async () => {
+            try {
+                const host = roleManager.getHostAndPort();
+                const headers = connectionManager.getHeaders();
+                const authHeaders = roleManager.getHeaders(headers);
+                
+                const response = await fetch(`http://${host}/api/admin_risk_action.php`, {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        marker_id: markerId,
+                        action: 'confirmed_safe'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('操作失败');
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    uiManager.alert('已标记为安全', '操作成功');
+                    this.loadRiskList();
+                    this.closeRiskDetailModal();
+                }
+            } catch (e) {
+                uiManager.alert('操作失败: ' + e.message, '错误');
+            }
+        }, '确认安全');
+    }
+
+    async ignoreRisk(markerId) {
+        uiManager.confirm('确定要忽略此风险吗？', async () => {
+            try {
+                const host = roleManager.getHostAndPort();
+                const headers = connectionManager.getHeaders();
+                const authHeaders = roleManager.getHeaders(headers);
+                
+                const response = await fetch(`http://${host}/api/admin_risk_action.php`, {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        marker_id: markerId,
+                        action: 'ignored'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('操作失败');
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    uiManager.alert('已忽略此风险', '操作成功');
+                    this.loadRiskList();
+                    this.closeRiskDetailModal();
+                }
+            } catch (e) {
+                uiManager.alert('操作失败: ' + e.message, '错误');
+            }
+        }, '忽略风险');
+    }
+
+    async toggleBatchLock(batchId, action, sn, markerId) {
+        const confirmMsg = action === 'lock' 
+            ? '确定要锁定此查询批次吗？锁定后该批次的所有查询将被拒绝。'
+            : '确定要解锁此查询批次吗？';
+
+        uiManager.confirm(confirmMsg, async () => {
+            try {
+                const host = roleManager.getHostAndPort();
+                const headers = connectionManager.getHeaders();
+                const authHeaders = roleManager.getHeaders(headers);
+                
+                const response = await fetch(`http://${host}/api/admin_batch_lock.php`, {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        batch_id: batchId,
+                        action: action,
+                        sn: sn,
+                        marker_id: markerId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('操作失败');
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    uiManager.alert(data.message, '操作成功');
+                    this.loadRiskList();
+                    if (this.currentMarkerId) {
+                        this.viewDetail(this.currentMarkerId);
+                    }
+                }
+            } catch (e) {
+                uiManager.alert('操作失败: ' + e.message, '错误');
+            }
+        }, action === 'lock' ? '锁定批次' : '解锁批次');
+    }
+
+    openAdminModal() {
+        this.loadRiskList();
+        this.adminModal.classList.remove('hidden');
+        uiManager.showOverlay();
+    }
+
+    closeAdminModal() {
+        this.adminModal.classList.add('hidden');
+        uiManager.hideOverlay();
+    }
+
+    closeRiskDetailModal() {
+        this.riskDetailModal.classList.add('hidden');
+        if (this.adminModal.classList.contains('hidden')) {
+            uiManager.hideOverlay();
+        }
+    }
+}
+
+// ==================== 查询管理器增强 ====================
 class QueryManager {
     constructor() {
         this.form = document.getElementById('queryForm');
@@ -651,21 +1241,33 @@ class QueryManager {
 
             const facodeInput = document.getElementById('facodeInput');
             const ipInput = document.getElementById('ipInput');
+            const cityInput = document.getElementById('cityInput');
+            const deviceInput = document.getElementById('deviceInput');
             if (facodeInput) facodeInput.addEventListener('input', () => this.updateCurlCommand());
             if (ipInput) ipInput.addEventListener('input', () => this.updateCurlCommand());
+            if (cityInput) cityInput.addEventListener('change', () => this.updateCurlCommand());
+            if (deviceInput) deviceInput.addEventListener('change', () => this.updateCurlCommand());
         }
         this.updateCurlCommand();
     }
 
     updateCurlCommand() {
         const facode = document.getElementById('facodeInput')?.value || 'FA001';
-        const ip = document.getElementById('ipInput')?.value || 'localhost';
+        const host = roleManager.getHostAndPort();
+        const city = document.getElementById('cityInput')?.value || '北京';
+        const device = document.getElementById('deviceInput')?.value || 'desktop';
         const headers = connectionManager.getHeaders();
+        const role = roleManager ? roleManager.getRole() : 'user';
+        const batchId = roleManager ? roleManager.getBatchId() : '';
 
-        let curlCmd = `curl "http://${ip}:8080/api/query.php?facode=${facode}"`;
+        let curlCmd = `curl "http://${host}/api/query.php?facode=${facode}"`;
         Object.entries(headers).forEach(([key, value]) => {
             if (value) curlCmd += ` \\\n  -H "${key}: ${value}"`;
         });
+        curlCmd += ` \\\n  -H "X-User-Role: ${role}"`;
+        curlCmd += ` \\\n  -H "X-Batch-Id: ${batchId}"`;
+        curlCmd += ` \\\n  -H "X-City: ${city}"`;
+        curlCmd += ` \\\n  -H "X-Device-Type: ${device}"`;
 
         if (this.curlCommand) this.curlCommand.textContent = curlCmd;
     }
@@ -674,7 +1276,6 @@ class QueryManager {
         const facode = document.getElementById('facodeInput')?.value.trim();
         const ip = document.getElementById('ipInput')?.value.trim() || 'localhost';
 
-        // 校验
         if (!ip) {
             uiManager.alert('请输入服务器 IP 地址或域名', '缺少参数');
             return;
@@ -690,10 +1291,12 @@ class QueryManager {
         this.hideResult();
 
         try {
-            const headers = connectionManager.getHeaders();
-            const url = `http://${ip}:8080/api/query.php?facode=${encodeURIComponent(facode)}`;
+            const host = roleManager.getHostAndPort();
+            const baseHeaders = connectionManager.getHeaders();
+            const authHeaders = roleManager.getHeaders(baseHeaders);
+            const url = `http://${host}/api/query.php?facode=${encodeURIComponent(facode)}`;
 
-            const response = await fetch(url, { method: 'GET', headers: headers });
+            const response = await fetch(url, { method: 'GET', headers: authHeaders });
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
@@ -705,7 +1308,11 @@ class QueryManager {
 
             if (data.success && data.data) {
                 this.showResult(data.data);
-                historyManager.add({ facode, ip, sn: data.data.sn });
+                historyManager.add({ facode, ip, sn: data.data.sn, risk: data.data.risk });
+                
+                if (data.data.risk && roleManager.isAdmin() && riskManager) {
+                    riskManager.loadRiskList();
+                }
             } else if (data.success && !data.data) {
                 this.showError('未找到该固定资产编码对应的序列号');
                 historyManager.add({ facode, ip, sn: null });
@@ -740,7 +1347,58 @@ class QueryManager {
 
         const resultContent = document.getElementById('resultContent');
         if (resultContent) {
-            resultContent.innerHTML = `
+            let html = '';
+            
+            if (data.risk && data.risk.needs_manual_confirm) {
+                if (data.risk.is_admin) {
+                    const levelLabels = {
+                        low: { text: '低风险', class: 'bg-gray-200 text-gray-800' },
+                        medium: { text: '中风险', class: 'bg-yellow-200 text-yellow-800' },
+                        high: { text: '高风险', class: 'bg-orange-200 text-orange-800' },
+                        critical: { text: '严重风险', class: 'bg-red-200 text-red-800' }
+                    };
+                    const level = levelLabels[data.risk.risk_level] || levelLabels.medium;
+                    const ruleLabels = {
+                        city_mismatch: '跨城市查询',
+                        device_mismatch: '跨设备类型查询',
+                        frequency_exceed: '高频查询'
+                    };
+
+                    html += `
+                        <div class="bg-gradient-to-r from-red-50 to-orange-50 rounded-xl p-5 border border-red-200 mb-4 animate-fade-in">
+                            <div class="flex items-center gap-2 mb-3">
+                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span class="font-bold text-red-700">风险检测提示（管理员视图）</span>
+                                <span class="px-2 py-0.5 ${level.class} text-xs font-bold rounded-full">${level.text}</span>
+                            </div>
+                            <div class="text-sm text-red-700 mb-2">${data.risk.risk_reason}</div>
+                            <div class="text-xs text-red-600">
+                                触发规则: ${data.risk.triggered_rules.map(r => ruleLabels[r] || r).join('、')}
+                            </div>
+                            <button onclick="window.riskManager.viewDetail(${data.risk.marker_id})" class="mt-3 text-sm text-red-700 font-medium underline hover:text-red-900">
+                                前往风险管控中心处理 →
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-xl p-5 border border-yellow-200 mb-4 animate-fade-in">
+                            <div class="flex items-center gap-2 mb-2">
+                                <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span class="font-bold text-yellow-700">需要人工确认</span>
+                            </div>
+                            <p class="text-sm text-yellow-700">${data.risk.message}</p>
+                            <p class="text-xs text-yellow-600 mt-1">请联系管理员进行核实</p>
+                        </div>
+                    `;
+                }
+            }
+
+            html += `
                 <div class="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-100 shadow-sm animate-fade-in">
                     <div class="flex items-center justify-between mb-4">
                         <span class="text-sm font-bold text-emerald-600 uppercase tracking-widest">查询结果</span>
@@ -756,9 +1414,14 @@ class QueryManager {
                             <div class="text-xs text-gray-500 uppercase font-semibold mb-1">序列号 (SN)</div>
                             <div class="text-3xl font-extrabold text-emerald-600 font-mono tracking-wide selection:bg-emerald-200">${data.sn}</div>
                         </div>
+                        <div class="text-xs text-gray-400">
+                            批次 ID: <span class="font-mono">${data.batch_id.substring(0, 20)}...</span>
+                        </div>
                     </div>
                 </div>
             `;
+            
+            resultContent.innerHTML = html;
         }
         this.resultBox.classList.remove('hidden');
     }
@@ -784,15 +1447,22 @@ let connectionManager;
 let historyManager;
 let queryManager;
 let uiManager;
+let roleManager;
+let riskManager;
 
 document.addEventListener('DOMContentLoaded', () => {
     uiManager = new UIManager();
     connectionManager = new ConnectionManager();
     historyManager = new HistoryManager();
+    roleManager = new RoleManager();
+    riskManager = new RiskManager();
+    roleManager.setRiskManager(riskManager);
     queryManager = new QueryManager();
 
     // EXPOSE TO WINDOW for inline onclick handlers
     window.connectionManager = connectionManager;
     window.uiManager = uiManager;
     window.queryManager = queryManager;
+    window.roleManager = roleManager;
+    window.riskManager = riskManager;
 });

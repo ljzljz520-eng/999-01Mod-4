@@ -100,7 +100,7 @@ FAQuery/
 
 **请求示例**：
 ```bash
-curl "http://localhost:8080/api/query.php?facode=FA001"
+curl "http://localhost:8086/api/query.php?facode=FA001"
 ```
 
 **响应格式**：
@@ -173,7 +173,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:80"
+      - "3006:80"
     depends_on:
       - backend
     networks:
@@ -182,7 +182,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:80"
+      - "8086:80"
     volumes:
       - ./data:/app/data  # 挂载 SQLite 数据库
     networks:
@@ -202,13 +202,13 @@ networks:
 1. **API 接口测试**：
    ```bash
    # 测试有数据的情况
-   curl "http://localhost:8080/api/query.php?facode=FA001"
+   curl "http://localhost:8086/api/query.php?facode=FA001"
    
    # 测试无数据的情况
-   curl "http://localhost:8080/api/query.php?facode=NOTEXIST"
+   curl "http://localhost:8086/api/query.php?facode=NOTEXIST"
    
    # 测试缺少参数
-   curl "http://localhost:8080/api/query.php"
+   curl "http://localhost:8086/api/query.php"
    ```
 
 2. **Docker 启动测试**：
@@ -219,7 +219,7 @@ networks:
 ### 手动验证
 
 1. **前端页面功能**：
-   - 访问 `http://localhost:3000`
+   - 访问 `http://localhost:3006`
    - 输入 IP 地址和 FACode
    - 验证 API 命令显示正确
    - 验证返回值正确显示
@@ -234,5 +234,5 @@ networks:
 
 | 服务 | 容器端口 | 宿主机端口 | 访问地址 |
 |------|----------|------------|----------|
-| 前端页面 | 80 | 3000 | http://localhost:3000 |
-| 后端 API | 80 | 8080 | http://localhost:8080/api/query.php |
+| 前端页面 | 80 | 3006 | http://localhost:3006 |
+| 后端 API | 80 | 8086 | http://localhost:8086/api/query.php |

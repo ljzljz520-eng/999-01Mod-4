@@ -127,8 +127,8 @@ function detectRisk($pdo, $sn, $currentCity, $currentDevice, $currentBatchId) {
         $rulesByCode[$rule['rule_code']] = $rule;
     }
 
-    $historyStmt = $pdo->prepare("SELECT DISTINCT city, device_type, batch_id, queried_at FROM query_logs WHERE sn = :sn AND batch_id != :current_batch_id ORDER BY queried_at DESC");
-    $historyStmt->execute(['sn' => $sn, 'current_batch_id' => $currentBatchId]);
+    $historyStmt = $pdo->prepare("SELECT DISTINCT city, device_type, batch_id, queried_at FROM query_logs WHERE sn = :sn ORDER BY queried_at DESC");
+    $historyStmt->execute(['sn' => $sn]);
     $history = $historyStmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (isset($rulesByCode['city_mismatch'])) {

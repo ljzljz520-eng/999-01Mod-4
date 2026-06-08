@@ -29,7 +29,7 @@ flowchart TB
         G[(SQLite 数据库)]
     end
     
-    A --> |访问 :3000| B
+    A --> |访问 :3006| B
     B --> C
     C --> |AJAX 请求| D
     D --> E
@@ -51,7 +51,7 @@ flowchart TB
      ```
    
 2. **前端页面**
-   - 访问 `http://localhost:3000`
+   - 访问 `http://localhost:3006`
    - HTTP 200 OK，页面加载成功
    - 文件大小：10811 字节，包含完整的 V3 UI
 

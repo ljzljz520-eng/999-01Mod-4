@@ -54,8 +54,8 @@
 
 ```bash
 # GET 请求
-curl "http://localhost:8080/api/query.php?facode=FA001"
+curl "http://localhost:8086/api/query.php?facode=FA001"
 
 # POST 请求
-curl -X POST "http://localhost:8080/api/query.php" -d "facode=FA001"
+curl -X POST "http://localhost:8086/api/query.php" -d "facode=FA001"
 ```

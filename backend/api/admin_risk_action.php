@@ -56,6 +56,14 @@ try {
         'id' => $markerId
     ]);
 
+    $syncStmt = $pdo->prepare("UPDATE risk_markers SET status = :status, note = :note, marked_by = 'admin', marked_at = NOW() WHERE sn = :sn AND status = 'pending' AND id != :id");
+    $syncStmt->execute([
+        'status' => $action,
+        'note' => $note . '（同序列号批量处理）',
+        'sn' => $marker['sn'],
+        'id' => $markerId
+    ]);
+
     $lockBatches = [];
     if ($action === 'confirmed_fraud') {
         $batchStmt = $pdo->prepare("SELECT DISTINCT batch_id FROM query_logs WHERE sn = :sn");

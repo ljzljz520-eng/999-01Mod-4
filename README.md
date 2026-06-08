@@ -47,7 +47,7 @@ FAQuery 是一个现代化的 Web 应用程序，用于通过服务器 IP 和固
     > 首次启动时，MySQL 容器会自动执行初始化脚本 (`mysql-init/init.sql`) 创建表和用户。
 
 3.  **访问应用**
-    打开浏览器访问: `http://localhost:3000`
+    打开浏览器访问: `http://localhost:3006`
 
 ### 使用指南
 
